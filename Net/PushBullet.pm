@@ -11,6 +11,7 @@ use Carp;
 use MIME::Base64;
 use File::MimeInfo::Magic;
 use File::Basename;
+use File::Slurp;
 
 sub new
 {
