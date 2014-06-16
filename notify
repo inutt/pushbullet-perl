@@ -1,0 +1,15 @@
+#!/usr/bin/perl
+#
+# Send notifications to all your devices via pushbullet
+#
+
+use common::sense;
+use Net::PushBullet;
+
+my $title = $ARGV[0];
+my $message = $ARGV[1];
+
+die "Need to specify title and message" if !$title || !$message;
+
+my $pb = Net::PushBullet->new(key_file=>$ENV{'HOME'}.'/.pushbulletrc');
+$pb->push_note($title, $message);
