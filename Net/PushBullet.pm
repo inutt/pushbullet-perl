@@ -41,7 +41,7 @@ sub new
 
 	my $this = {
 		'ua' => LWP::UserAgent->new(
-			timeout => 8,
+			timeout => 20,
 			protocols_allowed => ['https'],
 		),
 		'api_base_url' => "https://api.pushbullet.com/v2/",
@@ -58,7 +58,10 @@ sub _ua { my $this = shift; return $this->{'ua'}; };
 sub _parse_response_code
 {
 	my $this = shift;
-	my $code = shift;
+	my $response = shift;
+
+	my $code = $response->code;
+	my $message = $response->message;
 
 	# Parse response codes as per https://www.pushbullet.com/api
 
@@ -70,8 +73,8 @@ sub _parse_response_code
 		when (402) { return "Parameters were valid but the request failed" };
 		when (403) { return "API key is not valid for that request" };
 		when (404) { return "Specified device/push ID or requested API url not found" };
-		when (/5\d\d/) { return "Server error, try again later" };
-		default { return "API returned unknown response code $code" };
+		when (/5\d\d/) { return "Server error, try again later ($code - $message)" };
+		default { return "API returned unknown response code $code ($message)" };
 	};
 };
 
@@ -85,7 +88,7 @@ sub get_devices
 
 	my $response = $this->_ua->get($this->{'api_base_url'}."devices");
 	if ($response->is_success) { return decode_json($response->decoded_content)->{'devices'}; }
-	else                       { croak($this->_parse_response_code($response->code));         };
+	else                       { croak($this->_parse_response_code($response));         };
 };
 
 sub delete_device
@@ -95,7 +98,7 @@ sub delete_device
 
 	my $response = $this->_ua->delete($this->{'api_base_url'}."devices/".$id);
 	if ($response->is_success) { return decode_json($response->decoded_content);      }
-	else                       { croak($this->_parse_response_code($response->code)); };
+	else                       { croak($this->_parse_response_code($response)); };
 };
 
 ###
@@ -114,7 +117,7 @@ sub _send_push
 	);
 
 	if ($response->is_success) { return decode_json($response->decoded_content);      }
-	else                       { croak($this->_parse_response_code($response->code)); };
+	else                       { croak($this->_parse_response_code($response)); };
 };
 
 sub push_note
@@ -192,19 +195,11 @@ sub push_file
 sub get_pushes
 {
 	my $this = shift;
-	my $after_timestamp = shift || time()-86400; # default to last 24 hours onlu to prevent excessive server load
+	my $after_timestamp = shift // time()-86400; # default to last 24 hours onlu to prevent excessive server load
 
-	my @pushes;
-	my $cursor = "null";
-	do
-	{
-#		my $response = $this->_ua->get($this->{'api_base_url'}."pushes?modified_after=".$after_timestamp."&cursor=".$cursor);
-		my $response = $this->_ua->get($this->{'api_base_url'}."pushes?modified_after=".$after_timestamp); # Cursor seems unnecessary at the moment, and causes incorrect parameters error
-		if ($response->is_success) { push @pushes,decode_json($response->decoded_content)->{'pushes'}; }
-		else                       { croak($this->_parse_response_code($response->code));            };
-		$cursor = $response->decoded_content->{'cursor'};
-	} until ($cursor ne "null");
-	return @pushes;
+	my $response = $this->_ua->get($this->{'api_base_url'}."pushes?modified_after=".$after_timestamp); # Cursor seems unnecessary at the moment, and causes incorrect parameters error
+	if ($response->is_success) { return @{decode_json($response->decoded_content)->{'pushes'}}; }
+	else                       { croak($this->_parse_response_code($response));            };
 };
 
 sub delete_push
@@ -214,7 +209,7 @@ sub delete_push
 
 	my $response = $this->_ua->delete($this->{'api_base_url'}."pushes/".$id);
 	if ($response->is_success) { return decode_json($response->decoded_content);      }
-	else                       { croak($this->_parse_response_code($response->code)); };
+	else                       { croak($this->_parse_response_code($response)); };
 };
 
 ###
@@ -227,7 +222,7 @@ sub get_contacts
 
 	my $response = $this->_ua->get($this->{'api_base_url'}."contacts");
 	if ($response->is_success) { return decode_json($response->decoded_content)->{'contacts'}; }
-	else                       { croak($this->_parse_response_code($response->code));         };
+	else                       { croak($this->_parse_response_code($response));         };
 };
 
 sub delete_contact
@@ -237,7 +232,7 @@ sub delete_contact
 
 	my $response = $this->_ua->delete($this->{'api_base_url'}."contacts/".$id);
 	if ($response->is_success) { return decode_json($response->decoded_content);      }
-	else                       { croak($this->_parse_response_code($response->code)); };
+	else                       { croak($this->_parse_response_code($response)); };
 };
 
 ###
@@ -250,7 +245,7 @@ sub get_user
 
 	my $response = $this->_ua->get($this->{'api_base_url'}."users/me");
 	if ($response->is_success) { return decode_json($response->decoded_content); }
-	else                       { croak($this->_parse_response_code($response->code));         };
+	else                       { croak($this->_parse_response_code($response));         };
 };
 
 ###
@@ -267,7 +262,7 @@ sub _upload_file
 	my $mimetype = mimetype($filename);
 
 	my $response = $this->_ua->get($this->{'api_base_url'}."upload-request?file_name=".uri_escape(basename($filename))."&file_type=".uri_escape($mimetype));
-	if (!$response->is_success) { croak($this->_parse_response_code($response->code)); };
+	if (!$response->is_success) { croak($this->_parse_response_code($response)); };
 	my $upload_request = decode_json($response->decoded_content);
 
 	my $upload_ua = LWP::UserAgent->new(timeout => 8, protocols_allowed => ['https']); # Need a UA without the authorization header for upload as it's not going to amazon servers not pushbullet ones
